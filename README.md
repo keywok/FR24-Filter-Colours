@@ -4,10 +4,10 @@ A Chrome extension that overlays coloured dots on [Flightradar24](https://www.fl
 
 It also marks airports from your filters directly on the map, colour-coded by country.
 
-<img width="1850" height="1060" alt="image" src="https://github.com/user-attachments/assets/7b3c89f4-fc96-4839-87ec-1c7b2c359c38" />
+<img width="984" height="574" alt="Screenshot 2026-07-09 at 10 58 54" src="https://github.com/user-attachments/assets/9e262dc4-78fa-42ba-92c3-0a1a36179c17" />
 <p align="center">
-  <img width="312" height="569" alt="Screenshot 2026-07-07 at 15 47 07" src="https://github.com/user-attachments/assets/a8da7a6f-9321-4d89-bb4c-d677f5048747" />
-  <img width="312" height="569" alt="Screenshot 2026-07-07 at 15 47 19" src="https://github.com/user-attachments/assets/a4e674be-f43e-4d6a-8101-735c4a3e992b" />
+  <img width="318" height="506" alt="Screenshot 2026-07-09 at 10 56 08" src="https://github.com/user-attachments/assets/ea2d73f4-ccd5-4631-86f7-7882a32f9eb3" />
+  <img width="312" height="264" alt="Screenshot 2026-07-09 at 10 56 22" src="https://github.com/user-attachments/assets/225cff05-e31f-4835-85ec-9a36ce4426c6" />
 </p>
 
 ---
