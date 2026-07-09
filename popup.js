@@ -1,8 +1,9 @@
 const PRESETS = ['#ffadad','#ffd6a5','#fdffb6','#caffbf','#9bf6ff','#a0c4ff','#bdb2ff','#ffc6ff'];
 
-let groups  = [];
-let filters = [];
-let assignments = {};
+let groups        = [];
+let filters       = [];
+let assignments   = {};
+let claimedAirports = [];
 
 function setToggleUI(enabled) {
   const btn = document.getElementById('toggleEnabled');
@@ -14,12 +15,13 @@ function setToggleUI(enabled) {
 
 async function load() {
   const [sync, local] = await Promise.all([
-    chrome.storage.sync.get(['groups', 'assignments', 'showAllAirports', 'defaultAirportColor', 'extensionEnabled']),
+    chrome.storage.sync.get(['groups', 'assignments', 'showAllAirports', 'defaultAirportColor', 'extensionEnabled', 'claimedAirports']),
     chrome.storage.local.get(['fr24Filters']),
   ]);
-  filters     = local.fr24Filters || [];
-  assignments = sync.assignments  || {};
-  groups      = sync.groups       || [];
+  filters         = local.fr24Filters    || [];
+  assignments     = sync.assignments     || {};
+  groups          = sync.groups          || [];
+  claimedAirports = sync.claimedAirports || [];
   document.getElementById('showAllAirports').checked   = sync.showAllAirports    || false;
   document.getElementById('defaultAirportColor').value = sync.defaultAirportColor || '#ff3b3b';
   setToggleUI(sync.extensionEnabled !== false);
@@ -40,6 +42,29 @@ function save() {
 function render() {
   renderGroups();
   renderFilters();
+  renderClaimed();
+}
+
+function renderClaimed() {
+  const list = document.getElementById('claimedList');
+  const clearBtn = document.getElementById('clearClaims');
+  list.innerHTML = '';
+  for (const code of claimedAirports) {
+    const chip = document.createElement('div');
+    chip.style.cssText = 'display:flex;align-items:center;gap:3px;background:#fef9c3;border:1px solid #fcd34d;border-radius:4px;padding:2px 6px;font-size:12px;font-weight:600;';
+    chip.innerHTML = esc(code);
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.style.cssText = 'background:none;border:none;cursor:pointer;color:#92400e;font-size:14px;line-height:1;padding:0 0 0 3px;';
+    x.addEventListener('click', () => {
+      claimedAirports = claimedAirports.filter(c => c !== code);
+      chrome.storage.sync.set({ claimedAirports });
+      renderClaimed();
+    });
+    chip.appendChild(x);
+    list.appendChild(chip);
+  }
+  clearBtn.style.display = claimedAirports.length ? 'block' : 'none';
 }
 
 function renderGroups() {
@@ -142,6 +167,24 @@ function esc(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function addClaim() {
+  const input = document.getElementById('claimInput');
+  const code  = input.value.trim().toUpperCase();
+  if (!code || claimedAirports.includes(code)) { input.value = ''; return; }
+  claimedAirports.push(code);
+  chrome.storage.sync.set({ claimedAirports });
+  input.value = '';
+  renderClaimed();
+}
+
+document.getElementById('addClaim').addEventListener('click', addClaim);
+document.getElementById('claimInput').addEventListener('keydown', e => { if (e.key === 'Enter') addClaim(); });
+document.getElementById('clearClaims').addEventListener('click', () => {
+  claimedAirports = [];
+  chrome.storage.sync.set({ claimedAirports });
+  renderClaimed();
+});
+
 document.getElementById('toggleEnabled').addEventListener('click', () => {
   chrome.storage.sync.get({ extensionEnabled: true }, ({ extensionEnabled }) => {
     const next = !extensionEnabled;
@@ -157,5 +200,14 @@ document.getElementById('refreshFilters').addEventListener('click', () => {
 });
 
 document.getElementById('version').textContent = 'v' + chrome.runtime.getManifest().version;
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('[id^="tab-"]').forEach(p => p.style.display = 'none');
+    document.getElementById('tab-' + btn.dataset.tab).style.display = '';
+  });
+});
 
 load();

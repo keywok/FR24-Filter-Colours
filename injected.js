@@ -277,6 +277,7 @@
     }
 
     drawAirportDots();
+    drawClaimedAirports();
   }
 
   // --- Google Maps hook ---
@@ -319,18 +320,46 @@
     } catch (e) { return {}; }
   }
 
-  const airportDots = new Map(); // code → div
+  const airportDots  = new Map(); // iata → {lat, lng, country}
+  const claimedDots  = new Map(); // iata → {lat, lng}
+  let   apStoreRef   = null;
+
+  function getClaimedCodes() {
+    try { return new Set(JSON.parse(document.documentElement.dataset.fr24claimed || '[]')); }
+    catch (e) { return new Set(); }
+  }
 
   function processAirports(data) {
-    const codes = getFilterAirportCodes();
+    const filterCodes  = getFilterAirportCodes();
+    const claimedCodes = getClaimedCodes();
     const entries = Array.isArray(data) ? data : Object.values(data);
     for (const ap of entries) {
       const code = ap.iata || ap.icao || ap.code || ap.id;
       const lat  = ap.lat ?? ap.latitude;
       const lng  = ap.lon ?? ap.lng ?? ap.longitude;
       if (!code || lat == null || lng == null) continue;
-      if (codes.has(code)) airportDots.set(code, { lat, lng, country: ap.country });
-      else airportDots.delete(code);
+      if (filterCodes.has(code))  airportDots.set(code, { lat, lng, country: ap.country });
+      else                        airportDots.delete(code);
+      if (claimedCodes.has(code)) claimedDots.set(code, { lat, lng });
+    }
+    scheduleRedraw();
+  }
+
+  function updateClaimedLocations() {
+    claimedDots.clear();
+    if (!apStoreRef) return;
+    const codes = getClaimedCodes();
+    if (!codes.size) { scheduleRedraw(); return; }
+    const state = apStoreRef.$state;
+    const data  = state.airportMap ?? state.airports ?? state.airportsMap;
+    if (!data) return;
+    const entries = Array.isArray(data) ? data : Object.values(data);
+    for (const ap of entries) {
+      const code = ap.iata || ap.icao || ap.code || ap.id;
+      if (!codes.has(code)) continue;
+      const lat = ap.lat ?? ap.latitude;
+      const lng = ap.lon ?? ap.lng ?? ap.longitude;
+      if (lat != null && lng != null) claimedDots.set(code, { lat, lng });
     }
     scheduleRedraw();
   }
@@ -345,8 +374,10 @@
       const candidate = s.airportMap ?? s.airports ?? s.airportsMap;
       if (!candidate) continue;
       clearInterval(apStoreTimer);
+      apStoreRef = store;
       console.log('[FR24FC] airport store found:', name);
       processAirports(candidate);
+      updateClaimedLocations();
       store.$subscribe((_, state) => {
         const d = state.airportMap ?? state.airports ?? state.airportsMap;
         if (d) processAirports(d);
@@ -387,12 +418,44 @@
     }
   }
 
+  function drawClaimedAirports() {
+    if (!mapObj) return;
+    const proj   = mapObj.getProjection();
+    const bounds = mapObj.getBounds();
+    if (!proj || !bounds) return;
+    const ne    = proj.fromLatLngToPoint(bounds.getNorthEast());
+    const sw    = proj.fromLatLngToPoint(bounds.getSouthWest());
+    const scale = Math.pow(2, mapObj.getZoom());
+
+    const active = getClaimedCodes();
+    // Remove stars for codes no longer claimed
+    for (const el of container.querySelectorAll('[data-claimed]')) {
+      if (!active.has(el.dataset.claimed)) el.remove();
+    }
+    for (const [code, { lat, lng }] of claimedDots) {
+      const { x, y } = toPixel(proj, sw, ne, scale, lat, lng);
+      let el = container.querySelector(`[data-claimed="${code}"]`);
+      if (!el) {
+        el = document.createElement('div');
+        el.dataset.claimed = code;
+        el.style.cssText = 'position:absolute;width:14px;height:14px;border-radius:50%;border:3px solid #ffd700;background:transparent;box-shadow:0 0 0 1px rgba(0,0,0,0.6);transform:translate(-50%,-50%);pointer-events:none;';
+        container.appendChild(el);
+      }
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+    }
+  }
+
   // Reprocess on assignment/colour changes so new assignments show immediately
   new MutationObserver(() => {
     if (!isEnabled()) { clearAll(); return; }
     if (aircraftStore) processAircraftMap(aircraftStore.$state.aircraftMap);
     else scheduleRedraw();
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-fr24groups', 'data-fr24assignments', 'data-fr24airports', 'data-fr24showallair', 'data-fr24defaultairportcolor', 'data-fr24enabled'] });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-fr24groups', 'data-fr24assignments', 'data-fr24airports', 'data-fr24showallair', 'data-fr24defaultairportcolor', 'data-fr24enabled', 'data-fr24claimed'] });
+
+  new MutationObserver(() => {
+    updateClaimedLocations();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-fr24claimed'] });
 
   new MutationObserver(() => {
     if (dispatcherStore) {

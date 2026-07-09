@@ -41,12 +41,13 @@ chrome.runtime.onMessage.addListener(msg => {
 
 // Push groups + assignments config to injected.js via dataset attributes
 function pushConfig() {
-  chrome.storage.sync.get({ groups: [], assignments: {}, showAllAirports: false, defaultAirportColor: '#ff3b3b', extensionEnabled: true }, ({ groups, assignments, showAllAirports, defaultAirportColor, extensionEnabled }) => {
+  chrome.storage.sync.get({ groups: [], assignments: {}, showAllAirports: false, defaultAirportColor: '#ff3b3b', extensionEnabled: true, claimedAirports: [] }, ({ groups, assignments, showAllAirports, defaultAirportColor, extensionEnabled, claimedAirports }) => {
     document.documentElement.dataset.fr24groups             = JSON.stringify(groups);
     document.documentElement.dataset.fr24assignments        = JSON.stringify(assignments);
     document.documentElement.dataset.fr24showallair         = showAllAirports ? '1' : '';
     document.documentElement.dataset.fr24defaultairportcolor = defaultAirportColor;
     document.documentElement.dataset.fr24enabled            = extensionEnabled ? '1' : '';
+    document.documentElement.dataset.fr24claimed            = JSON.stringify(claimedAirports);
   });
 }
 pushConfig();
