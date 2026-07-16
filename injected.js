@@ -158,13 +158,16 @@
     const assignedFilters  = allFilters
       .filter(f => f.enabled && filterColorMap[f.id])
       .sort((a, b) => {
-        // destination (Airport direction:in) last = highest priority; reg next; everything else first
+        // First match wins in the loop below, so highest priority sorts FIRST:
+        // destination (Airport direction:in), then reg, then everything else.
+        // (Was ascending, which inverted the documented priority: a reg filter
+        // stole the match from a destination filter. Fixed 2026-07-16.)
         function prio(f) {
           if (f.conditions.some(c => c.type === 'Airport' && c.direction === 'in')) return 2;
           if (f.conditions.some(c => c.type === 'Registration')) return 1;
           return 0;
         }
-        return prio(a) - prio(b);
+        return prio(b) - prio(a);
       });
 
     if (!_airlineIcaoById && assignedFilters.some(f =>
@@ -238,25 +241,41 @@
     });
   }
 
+  // FR24's Vue does not process the re-read while the tab is hidden (owner
+  // confirmed 2026-07-16: clicks land but nothing updates until tabbed in), so
+  // clicking a hidden tab wastes the toggle. Defer until visible; the runner's
+  // _cmdRunning guard holds later batches in order while we wait.
+  function waitForVisible() {
+    if (document.visibilityState === 'visible') return Promise.resolve();
+    console.log('[FR24FC] refresh click deferred until tab is visible');
+    return new Promise(r => document.addEventListener('visibilitychange', function h() {
+      if (document.visibilityState !== 'visible') return;
+      document.removeEventListener('visibilitychange', h);
+      r();
+    }));
+  }
+
   // Double-toggle: FR24 re-reads its filters only on the sidebar's closed→open
   // transition, and one click just toggles. If the sidebar was already open, a
   // single click would close it (no re-read) and leave icons stale. Two clicks
   // always pass through exactly one open AND return the sidebar to its starting
   // state. The gap between them matters: a synchronous open→close can coalesce
   // in FR24's Vue reactivity to a no-op and skip the re-read entirely.
-  // Each click waits for and re-queries a LIVE button: the old single-capture
-  // version silently lost clicks when the button was missing at drain time or
-  // was replaced by Vue between the two clicks (a detached-node click is a
-  // no-op). Every failure now warns, so a D3 contract violation is visible.
-  // Async, so callers can await the full double-click (.finally waits on a
-  // returned thenable), keeping stacked batches from interleaving clicks.
+  // Each click waits for tab visibility and a LIVE re-queried button: the old
+  // single-capture version silently lost clicks when the button was missing at
+  // drain time or was replaced by Vue between the two clicks (a detached-node
+  // click is a no-op). Every failure now warns, so a D3 contract violation is
+  // visible. Async, so callers can await the full double-click (.finally waits
+  // on a returned thenable), keeping stacked batches from interleaving clicks.
   // 750ms is the tuning knob - raise if the re-read doesn't stick.
   async function clickFilterButton() {
+    await waitForVisible();
     const first = await waitForFilterButton(10000);
     if (!first) { console.warn('[FR24FC] refresh click FAILED: filter button not found within 10s'); return; }
     first.click();
     console.log('[FR24FC] refresh click 1/2');
     await new Promise(r => setTimeout(r, 750));
+    await waitForVisible(); // user may have tabbed away mid-gap
     const second = await waitForFilterButton(5000);
     if (!second) { console.warn('[FR24FC] refresh click 2/2 FAILED: filter button gone; sidebar left toggled'); return; }
     second.click();
