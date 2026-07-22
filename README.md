@@ -123,6 +123,18 @@ The Settings tab contains an optional integration with MapTrack, a private compa
 
 ---
 
+## Why aircraft-*type* filters don't colour the map
+
+A filter that matches on the aircraft **type** (its model — e.g. a *Cessna 152* or *Boeing 737*) will **not** draw coloured rings, even though FR24's own filtering still greys the matching aircraft in and out. This is a limitation of what FR24 sends to your browser, not a bug you can fix in the settings.
+
+FR24 does **not** include the aircraft type in the live map data your browser receives. It only loads an aircraft's type when you **click that specific aircraft** to open its info panel. So while the extension knows every aircraft's position, registration, altitude, callsign and route straight from the live feed, it has no way to know their *types* for the whole map at once.
+
+The only way around it would be for the extension to fetch every aircraft's details individually — which for a common type zoomed out (imagine a *Cessna 152* filter with a hundred of them on screen) could mean hundreds of requests firing at once, likely getting you rate-limited or temporarily blocked by FR24. That trade-off isn't worth it, so the extension deliberately doesn't do it.
+
+**What this means for you:** use **registration**, **altitude**, **airline**, or **airport** conditions to colour aircraft — those all work, because that information *is* in the live map feed. If a filter combines a type condition with a registration, airline, or airport condition, its aircraft will still colour via the other condition.
+
+---
+
 ## Performance
 
 The extension processes every aircraft position update from FR24 and redraws its overlay on every map pan or zoom. Airport dots are viewport-culled: only dots inside the current map view are positioned, and off-screen dots are hidden rather than destroyed, so panning remains smooth even with **Show all airport dots** enabled.
