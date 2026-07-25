@@ -98,7 +98,7 @@
   function matchesCond(ac, c) {
     switch (c.type) {
       case 'Registration': return ac.reg  === c.value;
-      case 'Aircraft':     return ac.type === c.value; // null icao → always false for this condition
+      case 'Aircraft':     return ac.type === c.value;
       case 'Altitude':     return ac.alt  >= c.value[0] && ac.alt <= c.value[1];
       case 'Airport':      return (c.direction === 'in' ? ac.dest : ac.origin) === c.value;
       case 'Airline':
@@ -176,11 +176,17 @@
 
     acData.clear();
     for (const [id, a] of Object.entries(aircraftMap)) {
+      // FR24 only puts a field on the feed record when its own display needs it, so
+      // type/registration/from/to arrive only while the user has FR24's aircraft
+      // labels on with Type/Registration/Route ticked (same gating as logoId).
+      // Undefined when they are off, which fails the === compares harmlessly.
+      // Was reading a.icao for type, which is never populated - that is what made
+      // type filters look impossible to support.
       const ac = {
         lat:      a.latitude,
         lng:      a.longitude,
         alt:      a.altitude,
-        type:     a.icao,
+        type:     a.type,
         reg:      a.registration,
         origin:   a.from,
         dest:     a.to,

@@ -24,6 +24,23 @@ The extension is **display-only**: it reads your existing FR24 filters and aircr
 
 ---
 
+## Requirements: check your FR24 map settings first
+
+The extension can only colour what FR24 actually sends to your browser, and FR24 only sends the fields its own display needs. **If the data a filter matches on is switched off in FR24's own settings, that filter silently colours nothing** - there is no error and no warning, the rings simply never appear.
+
+Before setting anything else up, open FR24's map settings and turn on:
+
+| FR24 setting | Required for |
+|---|---|
+| **Aircraft labels** on, with **Registration** ticked in its dropdown | Registration filters, and the registration shown on the extension's own labels |
+| **Aircraft labels** on, with **Route** ticked in its dropdown | Airport filters, both origin and destination matching |
+| **Aircraft labels** on, with **Type** ticked in its dropdown | Aircraft type filters (e.g. `C152`, `B738`) |
+| **Airline logos** (or show logo on hover) | Exact "painted as" airline matching; without it, "painted as" falls back to callsign matching |
+
+If you change any of these while FR24 is already open, reload the page.
+
+---
+
 ## Installation
 
 This is an unpacked extension; it isn't on the Chrome Web Store or Firefox Add-ons.
@@ -119,19 +136,7 @@ The Settings tab contains an optional integration with MapTrack, a private compa
 - The **On/Off** button pauses the extension (hides all dots) without uninstalling it.
 - If dots aren't showing after installing on a new device, fully quit and restart the browser.
 - The filter list is populated from the FR24 page; you must have [flightradar24.com](https://www.flightradar24.com) open before the popup can show filter assignments.
-- **Airline filters:** "painted as" filters match the aircraft's actual livery when FR24 provides it — enable **airline logos** (or logo-on-hover) in FR24's own map settings for this to work. Without logos enabled, "painted as" falls back to callsign matching, which reflects who is *operating* the flight and can mismatch when an aircraft flies for an airline other than its livery. "Operating as" filters always match by callsign; the rare flight using a non-standard callsign (some charters/ferry flights) may be missed.
-
----
-
-## Why aircraft-*type* filters don't colour the map
-
-A filter that matches on the aircraft **type** (its model — e.g. a *Cessna 152* or *Boeing 737*) will **not** draw coloured rings, even though FR24's own filtering still greys the matching aircraft in and out. This is a limitation of what FR24 sends to your browser, not a bug you can fix in the settings.
-
-FR24 does **not** include the aircraft type in the live map data your browser receives. It only loads an aircraft's type when you **click that specific aircraft** to open its info panel. So while the extension knows every aircraft's position, registration, altitude, callsign and route straight from the live feed, it has no way to know their *types* for the whole map at once.
-
-The only way around it would be for the extension to fetch every aircraft's details individually — which for a common type zoomed out (imagine a *Cessna 152* filter with a hundred of them on screen) could mean hundreds of requests firing at once, likely getting you rate-limited or temporarily blocked by FR24. That trade-off isn't worth it, so the extension deliberately doesn't do it.
-
-**What this means for you:** use **registration**, **altitude**, **airline**, or **airport** conditions to colour aircraft — those all work, because that information *is* in the live map feed. If a filter combines a type condition with a registration, airline, or airport condition, its aircraft will still colour via the other condition.
+- **Airline filters:** "painted as" filters match the aircraft's actual livery only when **airline logos** are enabled in FR24's own map settings (see [Requirements](#requirements-check-your-fr24-map-settings-first)). Without logos, "painted as" falls back to callsign matching, which reflects who is *operating* the flight and can mismatch when an aircraft flies for an airline other than its livery. "Operating as" filters always match by callsign; the rare flight using a non-standard callsign (some charters/ferry flights) may be missed.
 
 ---
 
