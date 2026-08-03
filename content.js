@@ -39,15 +39,27 @@ chrome.runtime.onMessage.addListener(msg => {
 });
 
 // Push groups + assignments config to injected.js via dataset attributes
+let _lastCaughtRegsJson = null; // skip rewriting the (large) caught-regs attribute unless it actually changed
 function pushConfig() {
-  chrome.storage.sync.get({ groups: [], assignments: {}, showAllAirports: false, hideEmptyAirportDots: false, defaultAirportColor: '#ff3b3b', extensionEnabled: true, claimedAirports: [] }, ({ groups, assignments, showAllAirports, hideEmptyAirportDots, defaultAirportColor, extensionEnabled, claimedAirports }) => {
-    document.documentElement.dataset.fr24groups             = JSON.stringify(groups);
-    document.documentElement.dataset.fr24assignments        = JSON.stringify(assignments);
-    document.documentElement.dataset.fr24showallair         = showAllAirports      ? '1' : '';
-    document.documentElement.dataset.fr24hideempty          = hideEmptyAirportDots ? '1' : '';
-    document.documentElement.dataset.fr24defaultairportcolor = defaultAirportColor;
-    document.documentElement.dataset.fr24enabled            = extensionEnabled ? '1' : '';
-    document.documentElement.dataset.fr24claimed            = JSON.stringify(claimedAirports);
+  Promise.all([
+    new Promise(res => chrome.storage.sync.get({ groups: [], assignments: {}, showAllAirports: false, hideEmptyAirportDots: false, defaultAirportColor: '#ff3b3b', extensionEnabled: true, claimedAirports: [], highlightNewRegs: false, newRegColor: '#22c55e' }, res)),
+    new Promise(res => chrome.storage.local.get({ caughtRegs: [] }, res)),
+  ]).then(([sync, local]) => {
+    document.documentElement.dataset.fr24groups             = JSON.stringify(sync.groups);
+    document.documentElement.dataset.fr24assignments        = JSON.stringify(sync.assignments);
+    document.documentElement.dataset.fr24showallair         = sync.showAllAirports      ? '1' : '';
+    document.documentElement.dataset.fr24hideempty          = sync.hideEmptyAirportDots ? '1' : '';
+    document.documentElement.dataset.fr24defaultairportcolor = sync.defaultAirportColor;
+    document.documentElement.dataset.fr24enabled            = sync.extensionEnabled ? '1' : '';
+    document.documentElement.dataset.fr24claimed            = JSON.stringify(sync.claimedAirports);
+    document.documentElement.dataset.fr24hlnewregs          = sync.highlightNewRegs ? '1' : '';
+    document.documentElement.dataset.fr24newregcolor        = sync.newRegColor;
+
+    const caughtRegsJson = JSON.stringify(local.caughtRegs);
+    if (caughtRegsJson !== _lastCaughtRegsJson) {
+      _lastCaughtRegsJson = caughtRegsJson;
+      document.documentElement.dataset.fr24caughtregs = caughtRegsJson;
+    }
   });
 }
 
@@ -124,6 +136,17 @@ new MutationObserver(() => {
 window.addEventListener('message', e => {
   if (e.source !== window || e.data?.fr24fc !== 'log-event') return;
   if (alive()) chrome.runtime.sendMessage({ type: 'postLogEvent', entry: e.data.entry }).catch(() => {});
+});
+
+// A reg marked caught via the on-map button (injected.js, page context) — persist
+// it locally so it's excluded from future new-reg checks without a full re-import.
+window.addEventListener('message', e => {
+  if (e.source !== window || e.data?.fr24fc !== 'mark-caught' || !e.data.reg) return;
+  chrome.storage.local.get({ caughtRegs: [] }, ({ caughtRegs }) => {
+    if (caughtRegs.includes(e.data.reg)) return;
+    caughtRegs.push(e.data.reg);
+    chrome.storage.local.set({ caughtRegs, caughtRegsCount: caughtRegs.length });
+  });
 });
 
 fetchRegMap();
