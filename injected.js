@@ -49,6 +49,21 @@
     scheduleRedraw();
   }
 
+  // --- Caught registrations (imported from a Skycards export via the popup) ---
+
+  let _caughtRegsSet = null;
+  function getCaughtRegsSet() {
+    if (_caughtRegsSet) return _caughtRegsSet;
+    try {
+      _caughtRegsSet = new Set(JSON.parse(document.documentElement.dataset.fr24caughtregs || '[]'));
+    } catch (_) { _caughtRegsSet = new Set(); }
+    return _caughtRegsSet;
+  }
+
+  function isHighlightNewRegsEnabled() {
+    return document.documentElement.dataset.fr24hlnewregs === '1';
+  }
+
   // --- Filter loading (read once from page's server-rendered state) ---
 
   let allFilters = null; // [{id, conditions}]
@@ -134,6 +149,14 @@
 
   const acData = new Map();
 
+  // id → { lat, lng, reg } for aircraft with a known registration not in the caught-regs set
+  const newRegData = new Map();
+
+  // Regs marked caught this session via the on-map button, ahead of the
+  // storage round-trip through content.js — prevents the dot reappearing if
+  // aircraft data refreshes before caughtRegsSet itself is updated.
+  const pendingCaughtRegs = new Set();
+
   function isEnabled() {
     return document.documentElement.dataset.fr24enabled === '1';
   }
@@ -146,6 +169,9 @@
     apMarkers.clear();
     airportDots.clear();
     claimedDots.clear();
+    for (const el of newRegMarkers.values()) el.remove();
+    newRegMarkers.clear();
+    newRegData.clear();
     container?.querySelectorAll('[data-ap]').forEach(el => el.remove());
     container?.querySelectorAll('[data-claimed]').forEach(el => el.remove());
   }
@@ -174,7 +200,11 @@
     if (!_airlineIcaoById && assignedFilters.some(f =>
       f.conditions.some(c => c.type === 'Airline' && c.operator === 'painted'))) ensureAirlineDb();
 
+    const highlightNewRegs = isHighlightNewRegsEnabled();
+    const caughtRegsSet    = highlightNewRegs ? getCaughtRegsSet() : null;
+
     acData.clear();
+    newRegData.clear();
     for (const [id, a] of Object.entries(aircraftMap)) {
       // FR24 only puts a field on the feed record when its own display needs it, so
       // type/registration/from/to arrive only while the user has FR24's aircraft
@@ -193,6 +223,15 @@
         callsign: a.callsign,
         logoId:   a.logoId,
       };
+
+      // Independent of filter matching — applies to every aircraft with a known reg
+      if (highlightNewRegs && ac.reg) {
+        const regUpper = ac.reg.toUpperCase();
+        if (!caughtRegsSet.has(regUpper) && !pendingCaughtRegs.has(regUpper)) {
+          newRegData.set(id, { lat: ac.lat, lng: ac.lng, reg: ac.reg });
+        }
+      }
+
       for (const f of assignedFilters) {
         if (matchesFilter(ac, f.conditions)) {
           acData.set(id, { lat: ac.lat, lng: ac.lng, filterId: f.id, alt: ac.alt, reg: ac.reg, dest: ac.dest });
@@ -602,6 +641,13 @@
 
     drawAirportDots(proj, ne, sw, scale);
     drawClaimedAirports(proj, ne, sw, scale);
+
+    if (isHighlightNewRegsEnabled()) {
+      drawNewRegMarkers(proj, ne, sw, scale);
+    } else if (newRegMarkers.size) {
+      for (const el of newRegMarkers.values()) el.remove();
+      newRegMarkers.clear();
+    }
   }
 
   // --- Google Maps hook ---
@@ -640,6 +686,7 @@
   const airportDots  = new Map(); // iata → {lat, lng, country}
   const claimedDots  = new Map(); // iata → {lat, lng}
   const apMarkers    = new Map(); // iata → div element
+  const newRegMarkers = new Map(); // aircraft id → div element
   let   apStoreRef   = null;
 
   function getClaimedCodes() {
@@ -798,6 +845,79 @@
     }
   }
 
+  function markRegCaught(reg) {
+    const regUpper = reg.toUpperCase();
+    pendingCaughtRegs.add(regUpper);
+    window.postMessage({ fr24fc: 'mark-caught', reg: regUpper }, '*');
+  }
+
+  function drawNewRegMarkers(proj, ne, sw, scale) {
+    const viewBounds = mapObj.getBounds();
+    const color      = document.documentElement.dataset.fr24newregcolor || '#22c55e';
+    const seen = new Set();
+    for (const [id, { lat, lng, reg }] of newRegData) {
+      seen.add(id);
+      if (viewBounds && !viewBounds.contains(new google.maps.LatLng(lat, lng))) {
+        const el = newRegMarkers.get(id);
+        if (el) el.style.display = 'none';
+        continue;
+      }
+      let el = newRegMarkers.get(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.style.cssText = 'position:absolute;width:9px;height:9px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,0.6);transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;z-index:3;';
+
+        // Hover popup: registration + a button to mark it caught, shown above the dot
+        const lbl = document.createElement('div');
+        lbl.style.cssText = 'display:none;align-items:center;gap:6px;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);white-space:nowrap;font:11px/1.4 sans-serif;color:#fff;background:rgba(25,30,40,0.92);padding:3px 5px;border-radius:4px;pointer-events:auto;';
+
+        const regSpan = document.createElement('span');
+        regSpan.style.cssText = 'font-weight:700;';
+        lbl.appendChild(regSpan);
+
+        const markBtn = document.createElement('button');
+        markBtn.textContent = '✓ Caught';
+        markBtn.style.cssText = 'font:inherit;background:#22c55e;color:#fff;border:none;border-radius:3px;padding:1px 5px;cursor:pointer;';
+        markBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          markRegCaught(regSpan.dataset.reg);
+          el.style.display = 'none'; // optimistic hide; redraw() will clean up once the store confirms
+        });
+        lbl.appendChild(markBtn);
+
+        el.appendChild(lbl);
+
+        // Delay hiding on leave — there's a few px gap between the dot and the
+        // popup above it, and mouseleave fires the instant the cursor crosses
+        // that gap. A short grace period gives the cursor time to reach the
+        // popup (whose own mouseenter cancels the pending hide) instead of the
+        // button vanishing the moment you move toward it.
+        let hideTimer = null;
+        function showLbl() { clearTimeout(hideTimer); lbl.style.display = 'flex'; el.style.zIndex = '4'; }
+        function scheduleHideLbl() {
+          hideTimer = setTimeout(() => { lbl.style.display = 'none'; el.style.zIndex = '3'; }, 250);
+        }
+        el.addEventListener('mouseenter', showLbl);
+        el.addEventListener('mouseleave', scheduleHideLbl);
+        lbl.addEventListener('mouseenter', showLbl);
+        lbl.addEventListener('mouseleave', scheduleHideLbl);
+
+        container.appendChild(el);
+        newRegMarkers.set(id, el);
+      }
+      el.style.display    = '';
+      el.style.background = color;
+      el.firstChild.firstChild.textContent   = reg; // lbl → regSpan
+      el.firstChild.firstChild.dataset.reg   = reg;
+      const { x, y } = toPixel(proj, sw, ne, scale, lat, lng);
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+    }
+    for (const [id, el] of newRegMarkers) {
+      if (!seen.has(id)) { el.remove(); newRegMarkers.delete(id); }
+    }
+  }
+
   function drawClaimedAirports(proj, ne, sw, scale) {
     const active = getClaimedCodes();
     // Remove stars for codes no longer claimed
@@ -836,10 +956,13 @@
     if (mutations.some(m => m.attributeName === 'data-fr24filtercommands')) {
       processFilterCommands();
     }
+    if (mutations.some(m => m.attributeName === 'data-fr24caughtregs')) {
+      _caughtRegsSet = null; // invalidate cache so getCaughtRegsSet() re-reads fresh data
+    }
     if (!isEnabled()) { clearAll(); return; }
     if (aircraftStore) processAircraftMap(aircraftStore.$state.aircraftMap);
     else scheduleRedraw();
-  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-fr24groups', 'data-fr24assignments', 'data-fr24airports', 'data-fr24showallair', 'data-fr24hideempty', 'data-fr24defaultairportcolor', 'data-fr24enabled', 'data-fr24claimed', 'data-fr24regmap', 'data-fr24filtercommands'] });
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-fr24groups', 'data-fr24assignments', 'data-fr24airports', 'data-fr24showallair', 'data-fr24hideempty', 'data-fr24defaultairportcolor', 'data-fr24enabled', 'data-fr24claimed', 'data-fr24regmap', 'data-fr24filtercommands', 'data-fr24caughtregs', 'data-fr24hlnewregs', 'data-fr24newregcolor'] });
 
   new MutationObserver(() => {
     updateClaimedLocations();

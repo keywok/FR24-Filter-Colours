@@ -4,6 +4,8 @@ let groups        = [];
 let filters       = [];
 let assignments   = {};
 let claimedAirports = [];
+let caughtRegsCount = 0;
+let caughtRegsImportedAt = 0;
 
 // sync per-item quota is ~8KB; surface a silent quota/write failure instead of losing config quietly.
 function syncSet(obj) {
@@ -22,21 +24,26 @@ function setToggleUI(enabled) {
 
 async function load() {
   const [sync, local] = await Promise.all([
-    chrome.storage.sync.get(['groups', 'assignments', 'showAllAirports', 'hideEmptyAirportDots', 'defaultAirportColor', 'extensionEnabled', 'claimedAirports', 'maptrackUrl', 'maptrackUser', 'maptrackPass']),
-    chrome.storage.local.get(['fr24Filters']),
+    chrome.storage.sync.get(['groups', 'assignments', 'showAllAirports', 'hideEmptyAirportDots', 'defaultAirportColor', 'extensionEnabled', 'claimedAirports', 'maptrackUrl', 'maptrackUser', 'maptrackPass', 'highlightNewRegs', 'newRegColor']),
+    chrome.storage.local.get(['fr24Filters', 'caughtRegsCount', 'caughtRegsImportedAt']),
   ]);
-  filters         = local.fr24Filters    || [];
-  assignments     = sync.assignments     || {};
-  groups          = sync.groups          || [];
-  claimedAirports = sync.claimedAirports || [];
+  filters              = local.fr24Filters          || [];
+  assignments          = sync.assignments           || {};
+  groups               = sync.groups                || [];
+  claimedAirports      = sync.claimedAirports        || [];
+  caughtRegsCount      = local.caughtRegsCount       || 0;
+  caughtRegsImportedAt = local.caughtRegsImportedAt  || 0;
   document.getElementById('showAllAirports').checked      = sync.showAllAirports      || false;
   document.getElementById('hideEmptyAirportDots').checked = sync.hideEmptyAirportDots || false;
   document.getElementById('defaultAirportColor').value    = sync.defaultAirportColor  || '#ff3b3b';
+  document.getElementById('highlightNewRegs').checked     = sync.highlightNewRegs     || false;
+  document.getElementById('newRegColor').value            = sync.newRegColor          || '#22c55e';
   setToggleUI(sync.extensionEnabled !== false);
   document.getElementById('maptrackUrl').value  = sync.maptrackUrl  || '';
   document.getElementById('maptrackUser').value = sync.maptrackUser || '';
   document.getElementById('maptrackPass').value = sync.maptrackPass || '';
   checkMapTrackConnection(sync.maptrackUrl || '', sync.maptrackUser || '', sync.maptrackPass || '');
+  renderSkycardsStatus();
   render();
 }
 
@@ -104,6 +111,69 @@ function render() {
   renderFilters();
   renderClaimed();
 }
+
+function renderSkycardsStatus() {
+  const el = document.getElementById('skycardsStatus');
+  if (!caughtRegsCount) {
+    el.textContent = 'No data imported yet.';
+    el.style.color = '#888';
+    return;
+  }
+  const dateSuffix = caughtRegsImportedAt ? ` (${new Date(caughtRegsImportedAt).toLocaleDateString()})` : '';
+  el.textContent = `${caughtRegsCount.toLocaleString()} registrations caught${dateSuffix}`;
+  el.style.color = '#16a34a';
+}
+
+function importSkycardsFile(file) {
+  const el = document.getElementById('skycardsStatus');
+  const reader = new FileReader();
+  reader.onload = () => {
+    let regs;
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data.uniqueRegs)) throw new Error('missing uniqueRegs');
+      regs = [...new Set(
+        data.uniqueRegs.map(r => (r.reg || '').trim().toUpperCase()).filter(Boolean)
+      )];
+    } catch (e) {
+      el.textContent = 'Import failed — not a valid Skycards export.';
+      el.style.color = '#ef4444';
+      return;
+    }
+    caughtRegsCount      = regs.length;
+    caughtRegsImportedAt = Date.now();
+    chrome.storage.local.set({
+      caughtRegs: regs,
+      caughtRegsCount,
+      caughtRegsImportedAt,
+    }, () => {
+      if (chrome.runtime.lastError) {
+        el.textContent = 'Import failed to save: ' + chrome.runtime.lastError.message;
+        el.style.color = '#ef4444';
+        return;
+      }
+      renderSkycardsStatus();
+    });
+  };
+  reader.onerror = () => {
+    el.textContent = 'Could not read file.';
+    el.style.color = '#ef4444';
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('importSkycards').addEventListener('click', () => {
+  const file = document.getElementById('skycardsFile').files[0];
+  if (!file) return;
+  importSkycardsFile(file);
+});
+
+document.getElementById('highlightNewRegs').addEventListener('change', e => {
+  syncSet({ highlightNewRegs: e.target.checked });
+});
+document.getElementById('newRegColor').addEventListener('input', e => {
+  syncSet({ newRegColor: e.target.value });
+});
 
 function renderClaimed() {
   const list = document.getElementById('claimedList');
@@ -275,6 +345,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.fr24Filters) {
     filters = changes.fr24Filters.newValue || [];
     renderFilters();
+  }
+  if (area === 'local' && changes.caughtRegsCount) {
+    caughtRegsCount = changes.caughtRegsCount.newValue || 0;
+    renderSkycardsStatus();
   }
 });
 

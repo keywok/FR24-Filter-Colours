@@ -98,6 +98,21 @@
   </div>
   <div id="claimedList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px;"></div>
   <button id="clearClaims" style="display:none;width:100%;padding:3px 8px;margin-bottom:4px;border:1px solid #fca5a5;border-radius:4px;background:none;cursor:pointer;font:inherit;color:#dc2626;font-size:12px;">Clear all claimed airports</button>
+
+  <h3>New Registrations (Skycards)</h3>
+  <div style="display:flex;gap:6px;margin-bottom:6px;">
+    <input type="file" id="skycardsFile" accept="application/json" style="flex:1;min-width:0;font-size:11px;">
+    <button id="importSkycards" style="padding:3px 10px;border:1px solid #ccc;border-radius:4px;background:none;cursor:pointer;font:inherit;flex-shrink:0;">Import</button>
+  </div>
+  <p id="skycardsStatus" style="font-size:11px;color:#888;margin:0 0 6px;">No data imported yet.</p>
+  <div class="airport-setting">
+    <input type="checkbox" id="highlightNewRegs">
+    <label for="highlightNewRegs">Highlight aircraft with uncaught registrations</label>
+  </div>
+  <div class="airport-setting">
+    <input type="color" id="newRegColor" value="#22c55e">
+    <label for="newRegColor">Uncaught registration color</label>
+  </div>
 </div>
 
 <!-- Settings tab -->
